@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Phone Collector</title>
+    <!-- Yandex Games SDK -->
+    <script src="/sdk.js"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
+        body { background: #121212; color: #fff; overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
+        #app { flex: 1; overflow-y: auto; padding: 16px; padding-bottom: 80px; }
+        .screen { display: none; }
+        .screen.active { display: block; }
+        h2 { margin-bottom: 16px; font-size: 22px; color: #fff; }
+        .phone-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 12px; }
+        .phone-card { background: #1e1e1e; border-radius: 12px; padding: 10px; text-align: center; cursor: pointer; border: 1px solid #333; }
+        .phone-card svg { width: 50px; height: 80px; margin-bottom: 8px; }
+        .phone-card .name { font-size: 11px; color: #ccc; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .phone-card .token { font-size: 9px; color: #666; margin-top: 4px; }
+        .case-list, .shop-list { display: flex; flex-direction: column; gap: 12px; }
+        .case-item, .shop-item { background: #1e1e1e; border-radius: 12px; padding: 16px; display: flex; justify-content: space-between; align-items: center; border: 1px solid #333; }
+        .case-item .price, .shop-item .price { color: #4caf50; font-weight: bold; }
+        button { background: #4caf50; color: #fff; border: none; padding: 10px 20px; border-radius: 8px; font-size: 14px; font-weight: bold; cursor: pointer; }
+        button:disabled { background: #555; cursor: not-allowed; }
+        .profile-section { background: #1e1e1e; border-radius: 12px; padding: 16px; margin-bottom: 16px; border: 1px solid #333; }
+        .profile-section label { display: block; font-size: 12px; color: #aaa; margin-bottom: 6px; }
+        .profile-section input { width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #444; background: #2a2a2a; color: #fff; font-size: 14px; }
+        .token-input-row { display: flex; gap: 8px; }
+        .token-input-row input { flex: 1; }
+        .bottom-nav { position: fixed; bottom: 0; left: 0; right: 0; background: #1e1e1e; display: flex; justify-content: space-around; padding: 12px 0; border-top: 1px solid #333; z-index: 10; }
+        .nav-item { display: flex; flex-direction: column; align-items: center; font-size: 10px; color: #666; cursor: pointer; background: none; border: none; padding: 0 12px; }
+        .nav-item.active { color: #4caf50; }
+        .nav-item .icon { font-size: 20px; margin-bottom: 4px; }
+        .notification { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background: #333; padding: 12px 24px; border-radius: 8px; font-size: 14px; z-index: 100; opacity: 0; transition: opacity 0.3s; pointer-events: none; }
+        .notification.show { opacity: 1; }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <!-- Screen: Phones -->
+        <div id="screen-phones" class="screen active">
+            <h2>📱 Мои смартфоны</h2>
+            <div id="my-phones" class="phone-grid"></div>
+        </div>
+
+        <!-- Screen: Cases -->
+        <div id="screen-cases" class="screen">
+            <h2>📦 Кейсы</h2>
+            <div id="case-list" class="case-list"></div>
+        </div>
+
+        <!-- Screen: Shop -->
+        <div id="screen-shop" class="screen">
+            <h2>🛒 Магазин</h2>
+            <div id="shop-list" class="shop-list"></div>
+        </div>
+
+        <!-- Screen: Profile -->
+        <div id="screen-profile" class="screen">
+            <h2>👤 Профиль</h2>
+            <div class="profile-section">
+                <label>Никнейм</label>
+                <input type="text" id="nickname-input" placeholder="Введите ник">
+                <button onclick="saveNickname()" style="margin-top: 8px; width: 100%;">Сохранить</button>
+            </div>
+            <div class="profile-section">
+                <label>Обмен по токену</label>
+                <div class="token-input-row">
+                    <input type="text" id="token-input" placeholder="Введите токен друга">
+                    <button onclick="exchangeByToken()">Обменять</button>
+                </div>
+            </div>
+            <div class="profile-section">
+                <label>Мой токен для обмена</label>
+                <input type="text" id="my-token-display" readonly style="color: #4caf50;">
+            </div>
+        </div>
+    </div>
+
+    <!-- Bottom Navigation -->
+    <div class="bottom-nav">
+        <button class="nav-item active" onclick="switchScreen('phones', this)">
+            <span class="icon">📱</span>Смартфоны
+        </button>
+        <button class="nav-item" onclick="switchScreen('cases', this)">
+            <span class="icon">📦</span>Кейсы
+        </button>
+        <button class="nav-item" onclick="switchScreen('shop', this)">
+            <span class="icon">🛒</span>Магазин
+        </button>
+        <button class="nav-item" onclick="switchScreen('profile', this)">
+            <span class="icon">👤</span>Профиль
+        </button>
+    </div>
+
+    <div id="notification" class="notification"></div>
+
+    <script>
+        // --- 1. Генерация 100 смартфонов (5 моделей на бренд) ---
+        const BRANDS = ['Vivo', 'Samsung', 'Apple', 'Poco', 'Oppo', 'OnePlus', 'Xiaomi', 'Realme', 'Honor', 'Huawei', 'Google', 'Nothing', 'Motorola', 'Nokia', 'Sony', 'Asus', 'ZTE', 'Infinix', 'Tecno', 'Meizu'];
+        const MODELS = ['X', 'Pro', 'Ultra', 'Lite', 'Max', 'Neo', 'Edge', 'Note', 'Fold', 'Flip'];
+        let allPhones = [];
+
+        function generatePhones() {
+            let id = 1;
+            for (let brand of BRANDS) {
+                for (let i = 0; i < 5; i++) {
+                    const modelName = `${brand} ${MODELS[i % MODELS.length]} ${i + 1}`;
+                    const token = `${brand.substring(0, 3).toUpperCase()}-${id.toString().padStart(3, '0')}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+                    // Цвета для SVG
+                    const colors = ['#2a2a2a', '#333', '#4a4a4a', '#555', '#6a6a6a', '#888'];
+                    allPhones.push({
+                        id: id,
+                        name: modelName,
+                        brand: brand,
+                        token: token,
+                        color: colors[Math.floor(Math.random() * colors.length)],
+                        value: Math.floor(Math.random() * 900) + 100 // условная стоимость
+                    });
+                    id++;
+                }
+            }
+            // Перемешаем, чтобы в магазине были разные бренды
+            allPhones.sort(() => Math.random() - 0.5);
+        }
+
+        // --- 2. SVG-отрисовка смартфона ---
+        function createPhoneSVG(phone) {
+            return `
+                <svg viewBox="0 0 100 160" xmlns="http://www.w3.org/2000/svg">
+                    <!-- Корпус -->
+                    <rect x="10" y="10" width="80" height="140" rx="12" fill="${phone.color}" stroke="#444" stroke-width="2"/>
+                    <!-- Экран -->
+                    <rect x="18" y="25" width="64" height="110" rx="4" fill="#111"/>
+                    <!-- Кнопка Home / Индикатор -->
+                    <circle cx="50" cy="145" r="4" fill="#333"/>
+                    <!-- Блок камеры (стилизованный) -->
+                    <rect x="60" y="15" width="15" height="20" rx="3" fill="#222"/>
+                    <circle cx="67.5" cy="22" r="3" fill="#555"/>
+                    <circle cx="67.5" cy="30" r="3" fill="#555"/>
+                </svg>
+            `;
+        }
+
+        // --- 3. Инициализация данных и localStorage ---
+        const DEFAULT_STATE = {
+            myPhones: [],
+            myToken: '',
+            nickname: 'Игрок',
+            shopItems: []
+        };
+
+        let state = JSON.parse(localStorage.getItem('phoneCollectorState')) || DEFAULT_STATE;
+
+        function saveState() {
+            localStorage.setItem('phoneCollectorState', JSON.stringify(state));
+            updateUI();
+        }
+
+        // Генерируем токен игрока при первом запуске
+        if (!state.myToken) {
+            state.myToken = 'PLAYER-' + Math.random().toString(36).substring(2, 10).toUpperCase();
+            saveState();
+        }
+
+        // --- 4. Функции UI ---
+        function showNotification(msg) {
+            const el = document.getElementById('notification');
+            el.textContent = msg;
+            el.classList.add('show');
+            setTimeout(() => el.classList.remove('show'), 2000);
+        }
+
+        function switchScreen(screenId, btn) {
+            document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+            document.getElementById('screen-' + screenId).classList.add('active');
+            document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+        }
+
+        function updateUI() {
+            renderMyPhones();
+            renderCases();
+            renderShop();
+            renderProfile();
+        }
+
+        function renderMyPhones() {
+            const container = document.getElementById('my-phones');
+            if (state.myPhones.length === 0) {
+                container.innerHTML = '<p style="color:#666; text-align:center; grid-column: 1/-1;">У вас пока нет смартфонов. Откройте кейс или купите в магазине!</p>';
+                return;
+            }
+            container.innerHTML = state.myPhones.map((phone, index) => `
+                <div class="phone-card" onclick="alert('Модель: ${phone.name}\\nТокен: ${phone.token}')">
+                    ${createPhoneSVG(phone)}
+                    <div class="name">${phone.name}</div>
+                    <div class="token">${phone.token}</div>
+                </div>
+            `).join('');
+        }
+
+        const CASES = [
+            { id: 1, name: 'Базовый кейс', price: 50, minValue: 100, maxValue: 300 },
+            { id: 2, name: 'Средний кейс', price: 300, minValue: 300, maxValue: 600 },
+            { id: 3, name: 'Продвинутый кейс', price: 350, minValue: 400, maxValue: 700 },
+            { id: 4, name: 'Премиум кейс', price: 1000, minValue: 700, maxValue: 1200 },
+            { id: 5, name: 'Элитный кейс', price: 2500, minValue: 1000, maxValue: 2000 }
+        ];
+
+        function renderCases() {
+            const container = document.getElementById('case-list');
+            container.innerHTML = CASES.map(c => `
+                <div class="case-item">
+                    <div>
+                        <div style="font-weight:bold;">${c.name}</div>
+                        <div style="font-size:12px; color:#888;">Шанс на редкую модель</div>
+                    </div>
+                    <div style="text-align:right;">
+                        <div class="price">${c.price} $</div>
+                        <button onclick="openCase(${c.id})" style="margin-top:8px;">Открыть</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function openCase(caseId) {
+            // Для простоты у игрока бесконечные деньги, но можно добавить баланс
+            const caseData = CASES.find(c => c.id === caseId);
+            const pool = allPhones.filter(p => p.value >= caseData.minValue && p.value <= caseData.maxValue);
+            const phone = pool[Math.floor(Math.random() * pool.length)];
+            // Клонируем телефон, чтобы у каждого экземпляра был свой токен
+            const newPhone = { ...phone, token: phone.token + '-' + Math.random().toString(36).substring(2, 6).toUpperCase() };
+            state.myPhones.push(newPhone);
+            saveState();
+            showNotification(`🎉 Вы получили: ${newPhone.name}!`);
+        }
+
+        function renderShop() {
+            const container = document.getElementById('shop-list');
+            // Генерируем лоты, если магазин пуст или прошёл час (упрощённо: при каждом заходе)
+            if (state.shopItems.length === 0) {
+                for (let i = 0; i < 10; i++) {
+                    const phone = allPhones[Math.floor(Math.random() * allPhones.length)];
+                    state.shopItems.push({ ...phone, shopPrice: Math.floor(phone.value * (1.2 + Math.random() * 0.5)) });
+                }
+                saveState();
+            }
+            container.innerHTML = state.shopItems.map((item, idx) => `
+                <div class="shop-item">
+                    <div style="display:flex; align-items:center; gap:12px;">
+                        ${createPhoneSVG(item)}
+                        <div>
+                            <div style="font-weight:bold; font-size:14px;">${item.name}</div>
+                            <div style="font-size:10px; color:#666;">Токен: ${item.token}</div>
+                        </div>
+                    </div>
+                    <div style="text-align:right;">
+                        <div class="price">${item.shopPrice} $</div>
+                        <button onclick="buyFromShop(${idx})" style="margin-top:8px;">Купить</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function buyFromShop(index) {
+            const item = state.shopItems[index];
+            const newPhone = { ...item, token: item.token + '-BUY-' + Math.random().toString(36).substring(2, 6).toUpperCase() };
+            state.myPhones.push(newPhone);
+            state.shopItems.splice(index, 1);
+            saveState();
+            showNotification(`✅ Куплено: ${newPhone.name}`);
+        }
+
+        function renderProfile() {
+            document.getElementById('nickname-input').value = state.nickname;
+            document.getElementById('my-token-display').value = state.myToken;
+        }
+
+        function saveNickname() {
+            const val = document.getElementById('nickname-input').value.trim();
+            if (val) {
+                state.nickname = val;
+                saveState();
+                showNotification('✅ Никнейм сохранён');
+            }
+        }
+
+        function exchangeByToken() {
+            const input = document.getElementById('token-input').value.trim().toUpperCase();
+            const phoneToGive = state.myPhones.find(p => p.token === input);
+            if (phoneToGive) {
+                // Упрощённый обмен: удаляем телефон и выдаём случайный новый
+                state.myPhones = state.myPhones.filter(p => p.token !== input);
+                const randomPhone = allPhones[Math.floor(Math.random() * allPhones.length)];
+                const newPhone = { ...randomPhone, token: randomPhone.token + '-EXC-' + Math.random().toString(36).substring(2, 6).toUpperCase() };
+                state.myPhones.push(newPhone);
+                saveState();
+                showNotification(`🔄 Обмен состоялся! Вы получили ${newPhone.name}`);
+                document.getElementById('token-input').value = '';
+            } else {
+                showNotification('❌ Токен не найден среди ваших смартфонов');
+            }
+        }
+
+        // --- 5. Запуск ---
+        async function initSDK() {
+            try {
+                await YaGames.init();
+                console.log('Yandex Games SDK инициализирован');
+            } catch (e) {
+                console.warn('SDK не загружен (локальный запуск)');
+            }
+        }
+
+        generatePhones();
+        updateUI();
+        // Инициализируем SDK, если скрипт загружен
+        if (typeof YaGames !== 'undefined') {
+            initSDK();
+        }
+    </script>
+</body>
+</html>
